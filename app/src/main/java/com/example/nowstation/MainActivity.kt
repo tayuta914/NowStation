@@ -1,15 +1,23 @@
 package com.example.nowstation
 
 import android.Manifest
-import android.annotation.SuppressLint import android.content.pm.PackageManager
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Bundle
+import android.util.Log
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.example.nowstation.`interface`.getStationApi
 import com.example.nowstation.databinding.ActivityMainBinding
 import com.google.android.gms.location.*
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 
 class MainActivity : AppCompatActivity() {
@@ -19,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private val REQUEST_CODE_LOCATION = 100
     private val locationCallback: LocationCallback? = null
     private var requestingLocationUpdates = false
+    private val getStationService by lazy { getStationApi() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,8 +87,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_CODE_LOCATION) return
-
-        if (grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+        if (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
             finish()
             return
         }
@@ -98,50 +106,107 @@ class MainActivity : AppCompatActivity() {
         ) {
             return
         }
-        fusedLocationClient.lastLocation.addOnSuccessListener {
+
+        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
             Toast.makeText(this, "座標点を取得しました。", Toast.LENGTH_SHORT).show()
-            val latitude: String = it.latitude.toString()
-            val longitude: String = it.longitude.toString()
-            binding.latitude.text = "緯度:$latitude"
-            binding.longitude.text = "経度:$longitude"
+            // Got last known location. In some rare situations this can be null.
+            if (location != null) { 
+//               val latitude = latitude
+//                val longitude = longitude
+            }
         }
+            .addOnFailureListener { e ->
+                // Exception thrown when fetching the location
+                Log.e("MainActivity", "Error trying to get last GPS location", e)
+                fetchItems()
+            }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (requestingLocationUpdates) {
-            startLocationUpdates()
-        }
-    }
 
-    @SuppressLint("MissingPermission")
-    private fun startLocationUpdates() {
-        locationCallback.also {
-            if (it != null) {
-                fusedLocationClient.requestLocationUpdates(
-                    LocationRequest.create().apply {
-                        interval = 5000
-                        priority = Priority.PRIORITY_HIGH_ACCURACY
-                    }, it, this.mainLooper
-                )
+//    fusedLocationClient.lastLocation.addOnSuccessListener {
+//        Toast.makeText(this, "座標点を取得しました。", Toast.LENGTH_SHORT).show()
+//        val latitude: String = it.latitude.toString()
+//        val longitude: String = it.longitude.toString()
+//        binding.latitude.text = "緯度:$latitude"
+//        binding.longitude.text = "経度:$longitude"
+//    }
+//    fetchItems()
+//}
+
+        private fun fetchItems() {
+
+            getStationService.getStationList().enqueue(object : Callback<Array<Station>> {
+                override fun onFailure(call: Call<Array<Station>>?, t: Throwable?) {
+                    Log.d("fetchItems", "response fail")
+                    Log.d("fetchItems", "throwable :$t")
+                }
+
+                override fun onResponse(
+                    call: Call<Array<Station>>,
+                    response: Response<Array<Station>>
+                ) {
+                    if (response.isSuccessful) {
+                        response.body()?.let {
+
+                            Log.d("fetchItems", "response success")
+                            val users = mutableListOf<String>()
+
+//                        for (item in it) {
+//                            stationName.add(item.stationName1)
+//                            stationName.add(item.stationName2)
+//                            stationName.add(item.stationName3)
+//                        }
+
+                            val adapter = ArrayAdapter(
+                                this@MainActivity,
+                                android.R.layout.simple_list_item_1,
+                                users
+                            )
+//                        val list: ListView = findViewById(R.id.listItem)
+//                        list.adapter = adapter
+                        }
+                    }
+                    Log.d("fetchItems", "response code:" + response.code())
+                    Log.d("fetchItems", "response errorBody:" + response.errorBody())
+                }
+            })
+        }
+
+        override fun onResume() {
+            super.onResume()
+            if (requestingLocationUpdates) {
+                startLocationUpdates()
+            }
+        }
+
+        @SuppressLint("MissingPermission")
+        private fun startLocationUpdates() {
+            locationCallback.also {
+                if (it != null) {
+                    fusedLocationClient.requestLocationUpdates(
+                        LocationRequest.create().apply {
+                            interval = 5000
+                            priority = Priority.PRIORITY_HIGH_ACCURACY
+                        }, it, this.mainLooper
+                    )
+                }
+            }
+        }
+
+        override fun onPause() {
+            super.onPause()
+            locationCallback.also {
+                if (it != null) {
+                    fusedLocationClient.removeLocationUpdates(it)
+                }
+                stopLocationUpdates()
+            }
+        }
+
+        private fun stopLocationUpdates() {
+            if (locationCallback != null) {
+                fusedLocationClient.removeLocationUpdates(locationCallback)
             }
         }
     }
-
-    override fun onPause() {
-        super.onPause()
-        locationCallback.also {
-            if (it != null) {
-                fusedLocationClient.removeLocationUpdates(it)
-            }
-            stopLocationUpdates()
-        }
-    }
-
-    private fun stopLocationUpdates() {
-        if (locationCallback != null) {
-            fusedLocationClient.removeLocationUpdates(locationCallback)
-        }
-    }
-}
 
