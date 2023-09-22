@@ -15,10 +15,17 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.nowstation.databinding.ActivityMainBinding
 import com.example.nowstation.`interface`.GetStationService
-import com.google.android.gms.location.*
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -28,10 +35,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private val REQUEST_CODE_LOCATION = 100
-    private val locationCallback: LocationCallback? = null
     private var requestingLocationUpdates = false
     private lateinit var retrofit: Retrofit
     private lateinit var getStationService: GetStationService
+
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(p0: LocationResult) {
+            val location = p0.lastLocation
+            if (location != null) {
+                val latitude = location.latitude
+                val longitude = location.longitude
+                // 取得した緯度・経度を使って最寄り駅を検索する処理を呼び出す
+                fetchNearbyStations(latitude, longitude)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,12 +69,12 @@ class MainActivity : AppCompatActivity() {
         getStationService = retrofit.create(GetStationService::class.java)
 
         binding.serach.setOnClickListener {
-            checkPermission()
+            requestPermission()
         }
     }
 
     // 現在のパーミッションを要求
-    private fun checkPermission() {
+    private fun requestPermission() {
         val permissionStatusOfLocation = ContextCompat.checkSelfPermission(
             this@MainActivity,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -118,6 +136,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun getCoordinates() {
         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        // 位置情報を取得する前にユーザから必要なパーミッションをチェックする
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -129,15 +149,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // 位置情報の取得
         fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-            Log.d(ContentValues.TAG, "座標点を取得しました")
-
             if (location != null) {
                 val latitude = location.latitude
                 val longitude = location.longitude
+                Log.d(ContentValues.TAG, "座標点を取得しました: ($latitude, $longitude)")
 
-                // 取得した緯度・経度を使って最寄り駅を検索する処理を呼び出す
-                fetchItems(latitude, longitude)
+                // 取得した緯度・経度を使って最寄り駅を検索する処理を呼び出し
+                fetchNearbyStations(latitude, longitude)
             }
         }
             .addOnFailureListener { e ->
@@ -145,7 +165,7 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    private fun fetchItems(latitude: Double, longitude: Double) {
+    private fun fetchNearbyStations(latitude: Double, longitude: Double) {
         lifecycleScope.launch {
             try {
                 val response = fetchStationsFromAPI(latitude, longitude)
@@ -158,7 +178,7 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun fetchStationsFromAPI(
         latitude: Double,
-        longitude: Double
+        longitude: Double,
     ): Response<StationResponse>? {
         return withContext(Dispatchers.IO) {
             getStationService.getNearbyStations("getStations", latitude, longitude)
@@ -182,11 +202,10 @@ class MainActivity : AppCompatActivity() {
         return stations.take(count).also { stationList ->
             stationList.forEach { station ->
                 val stationInfo = "${station.name} (${station.distance}m) - ${station.line}"
-                Log.d("fetchItems", stationInfo)
+                Log.d("fetchNearbyStations", stationInfo)
             }
         }
     }
-
 
     private fun getNearbyStations(stationList: List<StationData>) {
         lifecycleScope.launch {
@@ -223,17 +242,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        locationCallback.also {
-            if (it != null) {
-                fusedLocationClient.removeLocationUpdates(it)
-            }
-            stopLocationUpdates()
-        }
+        stopLocationUpdates()
     }
 
     private fun stopLocationUpdates() {
-        if (locationCallback != null) {
-            fusedLocationClient.removeLocationUpdates(locationCallback)
-        }
+        fusedLocationClient.removeLocationUpdates(locationCallback)
     }
 }

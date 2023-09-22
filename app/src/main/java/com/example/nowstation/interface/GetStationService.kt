@@ -8,7 +8,7 @@ import retrofit2.http.Query
 interface GetStationService {
     @GET("api/json")
     suspend fun getNearbyStations(
-        @Query("method") method: String,
+        @Query("method") method: String = "getStations",
         @Query("x") longitude: Double,
         @Query("y") latitude: Double
     ): Response<StationResponse>
